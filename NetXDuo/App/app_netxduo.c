@@ -24,7 +24,7 @@
 /* Private includes ----------------------------------------------------------*/
 #include "nxd_dhcp_client.h"
 /* USER CODE BEGIN Includes */
-
+#include "printf.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -266,6 +266,21 @@ static VOID nx_app_thread_entry (ULONG thread_input)
   }
 
   /* USER CODE BEGIN Nx_App_Thread_Entry 2 */
+  ULONG ip_address;
+  ULONG network_mask = 0xffffffff;
+
+  nx_ip_address_get(&NetXDuoEthIpInstance, &ip_address, &network_mask);
+  printf("IP address: %lu.%lu.%lu.%lu\n",
+    ip_address >> 24,
+    ip_address >> 16 & 0xFF,
+    ip_address >> 8 & 0xFF,
+    ip_address & 0xFF);
+  
+  printf("Network mask: %lu.%lu.%lu.%lu\n",
+    network_mask >> 24,
+    network_mask >> 16 & 0xFF,
+    network_mask >> 8 & 0xFF,
+    network_mask & 0xFF);
 
   /* USER CODE END Nx_App_Thread_Entry 2 */
 
