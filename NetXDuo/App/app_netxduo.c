@@ -25,6 +25,8 @@
 #include "nxd_dhcp_client.h"
 /* USER CODE BEGIN Includes */
 #include "printf.h"
+
+#include "nxd_dns.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -49,7 +51,15 @@ NX_IP          NetXDuoEthIpInstance;
 TX_SEMAPHORE   DHCPSemaphore;
 NX_DHCP        DHCPClient;
 /* USER CODE BEGIN PV */
+#define DNS_SERVER_ADDRESS IP_ADDRESS(168,126,63,1) // KT DNS
 
+NX_DNS client_dns;
+
+UCHAR record_buffer[256];
+UINT record_count, i;
+ULONG* ipv4_address_ptr[10];
+
+UCHAR local_cache[1024];
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -282,6 +292,80 @@ static VOID nx_app_thread_entry (ULONG thread_input)
     network_mask >> 8 & 0xFF,
     network_mask & 0xFF);
 
+  ret = nx_dns_create(&client_dns, &NetXDuoEthIpInstance, (UCHAR *)"DNS Client");
+  if (ret)
+  {
+    printf("DNS Client create failed: %d\n", ret);
+  }
+
+  /* Initialize the cache. */
+  ret = nx_dns_cache_initialize(&client_dns, local_cache, sizeof(local_cache));
+
+  /* Check for DNS cache error. */
+  if (ret)
+  {
+    printf("DNS cache initialize failed: %d\n", ret);
+  }
+
+  ret = nx_dns_server_add(&client_dns, DNS_SERVER_ADDRESS);
+  if (ret)
+  {
+    printf("DNS Server add failed: %d\n", ret);
+  }
+
+  // /* Look up an IPv4 address over IPv4. */
+  // ret = nx_dns_host_by_name_get(&client_dns, (UCHAR *)"www.naver.com", &ip_address, 400);
+  // if (ret)
+  // {
+  //   printf("DNS host by name get failed: %d\n", ret);
+  // }
+
+  // /* Check for DNS query error. */
+  // if (ret != NX_SUCCESS)
+  // {
+  //     printf("DNS query failed, result = %d\n", ret);
+  // }
+  // else
+  // {
+  //     printf("------------------------------------------------------\n");
+  //     printf("Test A: \n");
+  //     printf("IP address: %lu.%lu.%lu.%lu\n",
+  //     ip_address >> 24,
+  //     ip_address >> 16 & 0xFF,
+  //     ip_address >> 8 & 0xFF,
+  //     ip_address & 0xFF);
+  // }
+
+  ret = nx_dns_ipv4_address_by_name_get(&client_dns, 
+                                        (UCHAR *)"www.naver.com", 
+                                        &record_buffer[0], 
+                                        sizeof(record_buffer), 
+                                        &record_count, 
+                                        400);
+
+  /* Check for DNS query error. */
+  if (ret)
+  {
+    printf("DNS query failed, result = %d\n", ret);
+  }
+  else
+  {
+
+      printf("------------------------------------------------------\n");
+      printf("Test A: ");
+      printf("record_count = %d \n", record_count);
+  }
+
+  /* Get the IPv4 addresses of host. */
+  for(i = 0; i < record_count; i++)
+  {
+      ipv4_address_ptr[i] = (ULONG *)(record_buffer + i * sizeof(ULONG));
+      printf("record %d: IP address: %lu.%lu.%lu.%lu\n", i,
+              *ipv4_address_ptr[i] >> 24,
+              *ipv4_address_ptr[i] >> 16 & 0xFF,
+              *ipv4_address_ptr[i] >> 8 & 0xFF,
+              *ipv4_address_ptr[i] & 0xFF);
+  }
   /* USER CODE END Nx_App_Thread_Entry 2 */
 
 }

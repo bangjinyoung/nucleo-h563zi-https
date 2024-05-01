@@ -1500,9 +1500,7 @@
 */
 
 /* This enables the DNS Client to store the answer records into DNS cache. */
-/*
 #define NX_DNS_CACHE_ENABLE
-*/
 
 /* This sets the timeout option for allocating a packet from the DNS client
    packet pool. The default value is 1 second (1*NX_IP_PERIODIC_RATE). */
