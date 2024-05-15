@@ -72,11 +72,11 @@ UINT MX_NetXDuo_Init(VOID *memory_ptr);
 
 #define NX_APP_DEFAULT_TIMEOUT               (10 * NX_IP_PERIODIC_RATE)
 
-#define NX_APP_PACKET_POOL_SIZE              ((DEFAULT_PAYLOAD_SIZE + sizeof(NX_PACKET)) * 5)
+#define NX_APP_PACKET_POOL_SIZE              ((DEFAULT_PAYLOAD_SIZE + sizeof(NX_PACKET)) * 10)
 
 #define NX_APP_THREAD_STACK_SIZE             1024
 
-#define Nx_IP_INSTANCE_THREAD_SIZE           1024
+#define Nx_IP_INSTANCE_THREAD_SIZE           1024 * 4
 
 #define NX_APP_THREAD_PRIORITY               10
 

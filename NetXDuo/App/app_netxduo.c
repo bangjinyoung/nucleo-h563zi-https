@@ -27,6 +27,8 @@
 #include "printf.h"
 
 #include "nxd_dns.h"
+#include "nx_web_http_client.h"
+
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -60,6 +62,9 @@ UINT record_count, i;
 ULONG* ipv4_address_ptr[10];
 
 UCHAR local_cache[1024];
+
+NX_WEB_HTTP_CLIENT http_client;
+unsigned char buffer[1024 * 20];
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -313,59 +318,130 @@ static VOID nx_app_thread_entry (ULONG thread_input)
     printf("DNS Server add failed: %d\n", ret);
   }
 
-  // /* Look up an IPv4 address over IPv4. */
-  // ret = nx_dns_host_by_name_get(&client_dns, (UCHAR *)"www.naver.com", &ip_address, 400);
-  // if (ret)
-  // {
-  //   printf("DNS host by name get failed: %d\n", ret);
-  // }
+  UCHAR *server_name = "www.google.com";
 
-  // /* Check for DNS query error. */
-  // if (ret != NX_SUCCESS)
-  // {
-  //     printf("DNS query failed, result = %d\n", ret);
-  // }
-  // else
-  // {
-  //     printf("------------------------------------------------------\n");
-  //     printf("Test A: \n");
-  //     printf("IP address: %lu.%lu.%lu.%lu\n",
-  //     ip_address >> 24,
-  //     ip_address >> 16 & 0xFF,
-  //     ip_address >> 8 & 0xFF,
-  //     ip_address & 0xFF);
-  // }
-
-  ret = nx_dns_ipv4_address_by_name_get(&client_dns, 
-                                        (UCHAR *)"www.naver.com", 
-                                        &record_buffer[0], 
-                                        sizeof(record_buffer), 
-                                        &record_count, 
-                                        400);
-
-  /* Check for DNS query error. */
+  /* Look up an IPv4 address over IPv4. */
+  ret = nx_dns_host_by_name_get(&client_dns, server_name, &ip_address, 400);
   if (ret)
   {
-    printf("DNS query failed, result = %d\n", ret);
+    printf("DNS host by name get failed: %d\n", ret);
+  }
+
+  /* Check for DNS query error. */
+  if (ret != NX_SUCCESS)
+  {
+      printf("DNS query failed, result = %d\n", ret);
   }
   else
   {
-
       printf("------------------------------------------------------\n");
-      printf("Test A: ");
-      printf("record_count = %d \n", record_count);
+      printf("Test A: \n");
+      printf("IP address: %lu.%lu.%lu.%lu\n",
+      ip_address >> 24,
+      ip_address >> 16 & 0xFF,
+      ip_address >> 8 & 0xFF,
+      ip_address & 0xFF);
   }
 
-  /* Get the IPv4 addresses of host. */
-  for(i = 0; i < record_count; i++)
+  // ret = nx_dns_ipv4_address_by_name_get(&client_dns, 
+  //                                       server_name, 
+  //                                       &record_buffer[0], 
+  //                                       sizeof(record_buffer), 
+  //                                       &record_count, 
+  //                                       400);
+
+  // /* Check for DNS query error. */
+  // if (ret)
+  // {
+  //   printf("DNS query failed, result = %d\n", ret);
+  // }
+  // else
+  // {
+
+  //     printf("------------------------------------------------------\n");
+  //     printf("Test A: ");
+  //     printf("record_count = %d \n", record_count);
+  // }
+
+  // /* Get the IPv4 addresses of host. */
+  // for(i = 0; i < record_count; i++)
+  // {
+  //     ipv4_address_ptr[i] = (ULONG *)(record_buffer + i * sizeof(ULONG));
+  //     printf("record %d: IP address: %lu.%lu.%lu.%lu\n", i,
+  //             *ipv4_address_ptr[i] >> 24,
+  //             *ipv4_address_ptr[i] >> 16 & 0xFF,
+  //             *ipv4_address_ptr[i] >> 8 & 0xFF,
+  //             *ipv4_address_ptr[i] & 0xFF);
+  // }
+
+  int status, packet_status;
+  NX_PACKET *my_packet;
+  ULONG bytes_copied;
+  ULONG total_bytes_copied = 0;
+  NXD_ADDRESS server_ip_addr;
+
+  printf("http client start\n");
+
+  /* Create an HTTP client instance.  */
+  status = nx_web_http_client_create(&http_client, "My Client", &NetXDuoEthIpInstance, &NxAppPool, 1024);
+  if (status)
   {
-      ipv4_address_ptr[i] = (ULONG *)(record_buffer + i * sizeof(ULONG));
-      printf("record %d: IP address: %lu.%lu.%lu.%lu\n", i,
-              *ipv4_address_ptr[i] >> 24,
-              *ipv4_address_ptr[i] >> 16 & 0xFF,
-              *ipv4_address_ptr[i] >> 8 & 0xFF,
-              *ipv4_address_ptr[i] & 0xFF);
+    printf("http Client create failed\n");
   }
+
+   /* Allocate a packet.  */
+  status = nx_web_http_client_request_packet_allocate(&http_client, &my_packet, NX_WAIT_FOREVER);
+  if (status)
+  {
+    printf("http client request packet allocate failed\n");
+  }
+
+  server_ip_addr.nxd_ip_version = NX_IP_VERSION_V4;
+  server_ip_addr.nxd_ip_address.v4 = ip_address;
+
+  /* Start the GET operation on the HTTP Client "my_client." */
+  status = nx_web_http_client_get_start_extended(&http_client, &server_ip_addr, NX_WEB_HTTP_SERVER_PORT,
+      "/", sizeof("/") - 1,
+      server_name, strlen(server_name),
+      NX_NULL, 0,
+      NX_NULL, 0,
+      200);
+
+  if (status)
+  {
+    printf("http client get failed: %d\n", status);
+  }
+  else
+  {
+    printf("http client get success: %d\n", status);
+    do {
+      status = nx_web_http_client_response_body_get(&http_client, &my_packet, 200);
+      if (status)
+      {
+        printf("http client response body get failed: %d\n", status);
+      }
+
+      nx_packet_data_retrieve(my_packet, buffer, &bytes_copied);
+      total_bytes_copied += bytes_copied;
+
+      printf("%s\n", buffer);
+
+      memset(buffer, 0, sizeof(buffer));
+
+      packet_status = nx_packet_release(my_packet);
+
+    } while (status == NX_SUCCESS);
+  }
+  printf("\n");
+
+  printf("http get: %d, byte copited: %d\n", status, total_bytes_copied);
+
+  status = nx_web_http_client_delete(&http_client);
+  if (status)
+  {
+    printf("http client delete failed: %d\n", status);
+  }
+
   /* USER CODE END Nx_App_Thread_Entry 2 */
 
 }
