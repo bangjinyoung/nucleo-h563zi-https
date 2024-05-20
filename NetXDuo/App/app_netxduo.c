@@ -29,6 +29,7 @@
 #include "nxd_dns.h"
 #include "nx_web_http_client.h"
 
+#include "nxd_sntp_client.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -65,6 +66,13 @@ UCHAR local_cache[1024];
 
 NX_WEB_HTTP_CLIENT http_client;
 unsigned char buffer[1024 * 20];
+
+#define SNTP_UPDATE_EVENT 1
+
+TX_THREAD sntp_client_thread;
+static VOID sntp_client_thread_entry (ULONG thread_input);
+NX_SNTP_CLIENT sntp_client;
+TX_EVENT_FLAGS_GROUP sntp_flags;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -216,6 +224,33 @@ UINT MX_NetXDuo_Init(VOID *memory_ptr)
   tx_semaphore_create(&DHCPSemaphore, "DHCP Semaphore", 0);
 
   /* USER CODE BEGIN MX_NetXDuo_Init */
+  ret = nx_sntp_client_create(&sntp_client, 
+                              &NetXDuoEthIpInstance,
+                              0,
+                              &NxAppPool,
+                              NULL, NULL, NULL);
+  if (ret)
+  {
+    printf("sntp client create failed: %d\n", ret);
+  }
+
+  /* Allocate the memory for Link thread   */
+  if (tx_byte_allocate(byte_pool, (VOID **) &pointer, NX_APP_THREAD_STACK_SIZE, TX_NO_WAIT) != TX_SUCCESS)
+  {
+    return TX_POOL_ERROR;
+  }
+
+  /* create the Link thread */
+  ret = tx_thread_create(&sntp_client_thread, "sntp client thread", sntp_client_thread_entry, 0, pointer, 
+                        NX_APP_THREAD_STACK_SIZE, NX_APP_THREAD_PRIORITY, NX_APP_THREAD_PRIORITY, 
+                        TX_NO_TIME_SLICE, TX_DONT_START);
+
+  ret = tx_event_flags_create(&sntp_flags, "SNTP event flags");
+  if (ret)
+  {
+      printf("SNTP event flags create failed: %d\n", ret);
+  }
+  
   /* USER CODE END MX_NetXDuo_Init */
 
   return ret;
@@ -297,6 +332,8 @@ static VOID nx_app_thread_entry (ULONG thread_input)
     network_mask >> 8 & 0xFF,
     network_mask & 0xFF);
 
+  tx_thread_resume(&sntp_client_thread);
+
   ret = nx_dns_create(&client_dns, &NetXDuoEthIpInstance, (UCHAR *)"DNS Client");
   if (ret)
   {
@@ -318,7 +355,7 @@ static VOID nx_app_thread_entry (ULONG thread_input)
     printf("DNS Server add failed: %d\n", ret);
   }
 
-  UCHAR *server_name = "www.google.com";
+  UCHAR *server_name = "www.naver.com";
 
   /* Look up an IPv4 address over IPv4. */
   ret = nx_dns_host_by_name_get(&client_dns, server_name, &ip_address, 400);
@@ -447,4 +484,88 @@ static VOID nx_app_thread_entry (ULONG thread_input)
 }
 /* USER CODE BEGIN 1 */
 
+static VOID time_update_callback(NX_SNTP_TIME_MESSAGE *time_update_ptr, NX_SNTP_TIME *local_time)
+{
+  printf("time updated: %u\n", local_time->seconds);
+  tx_event_flags_set(&sntp_flags, SNTP_UPDATE_EVENT, TX_OR);
+}
+
+static VOID sntp_client_thread_entry (ULONG thread_input)
+{
+  UINT   status;
+  UINT   server_status;
+  ULONG  seconds;
+  ULONG  fraction;
+  ULONG  events = 0;
+
+  printf("sntp client thread start\n");
+
+  /* Setup time update callback function. */
+  nx_sntp_client_set_time_update_notify(&sntp_client, time_update_callback);
+
+  status = nx_sntp_client_initialize_unicast(&sntp_client, IP_ADDRESS(216,239,35,0));
+  if (status)
+  {
+    printf("sntp client initialize failed: %d\n", status);
+  }
+
+  seconds =  0xd2c96b90;  /* Jan 24, 2012 UTC */
+  fraction = 0xa132db1e;
+
+  /* Apply to the SNTP Client local time.  */
+  status = nx_sntp_client_set_local_time(&sntp_client, seconds, fraction);
+  if (status)
+  {
+    printf("sntp client set local time failed: %d\n", status);
+  }
+
+  status = nx_sntp_client_run_unicast(&sntp_client);
+  if (status)
+  {
+    printf("sntp client run failed: %d\n", status);
+  }
+
+  while(1)
+  {
+    tx_event_flags_get(&sntp_flags, SNTP_UPDATE_EVENT, TX_OR_CLEAR, &events, 100);
+
+    if (events == SNTP_UPDATE_EVENT)
+    {
+      status = nx_sntp_client_receiving_updates(&sntp_client, &server_status);
+
+      if ((status != NX_SUCCESS) || (server_status == NX_FALSE))
+      {
+          printf("sntp cleint receivng udpate failed status: %d, server: %d\n", status, server_status);
+
+          continue;
+      }
+
+      status = nx_sntp_client_get_local_time_extended(&sntp_client, &seconds, &fraction, buffer, sizeof(buffer)); 
+      if (status != NX_SUCCESS)
+      {
+          printf("Internal error with getting local time 0x%x\n", status);
+      }
+    }
+    else
+    {
+      seconds += 1;
+
+      status = nx_sntp_client_set_local_time(&sntp_client, seconds, fraction);
+      if (status)
+      {
+        printf("sntp client set local time failed: %d\n", status);
+      }
+    }
+
+    status = nx_sntp_client_utility_display_date_time(&sntp_client, buffer, sizeof(buffer));
+    if (status)
+    {
+      printf("sntp client utility display date time failed: %d\n", status);
+    }
+    else
+    {
+      printf("%s\n", buffer);
+    }
+  }
+}
 /* USER CODE END 1 */
